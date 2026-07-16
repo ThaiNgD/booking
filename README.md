@@ -1,178 +1,172 @@
-# Keyloop Coding Challenge: The Unified Service Scheduler
+# Keyloop Technical Assessment: The Unified Service Scheduler
 
-Scenario A: The Unified Service Scheduler 
-• Domain: Ownership 
-• Task: Build an Appointment Scheduler application to replace manual booking 
-systems. 
-• Core Requirements: 
-1. Resource Constrained Booking: Allow a user to request a service 
-appointment for a specific vehicle, service type, and dealership at a 
-desired time.
-2. Real-Time Availability Check: Before confirming, check for the 
-availability of both a ServiceBay and a qualified Technician for the entire 
-service duration. 
-3. Confirmed Appointment Record: Upon success, create a persistent 
-Appointment record associating the customer, vehicle, technician, and 
-service bay.
+**Scenario A** • **Domain:** Ownership
 
 ## 1. Project Overview
 
-[cite_start]This repository contains the solution for **Scenario A: The Unified Service Scheduler**[cite: 19]. 
+This repository contains the solution for **Scenario A: The Unified Service Scheduler**. The goal is to replace manual automotive booking systems with a streamlined, resource-constrained scheduling application. 
 
-* [cite_start]**Domain:** Ownership [cite: 20]
-* [cite_start]**Task:** Build an Appointment Scheduler application to replace manual booking systems[cite: 21].
-* **Implementation Focus:** Frontend Service Layer (React SPA) fully implemented with a mocked/stubbed RESTful Backend (Node.js/Express) and MongoDB data structures.
+**Architectural Inspiration:** The technical foundation of this project is inspired by the comprehensive tutorial: 
+> *(2) Build and Deploy a Full Stack Car Rental Booking App using React js & ImageKit | MERN Stack Project - YouTube*
+> 
+> The core concepts from that single-asset booking application have been heavily adapted to meet the complex, multi-asset constraints (Technician + Service Bay) required for Keyloop's dealership service environment.
 
 ### Core Requirements Addressed
-1. [cite_start]**Resource Constrained Booking:** Users can request a service appointment for a specific vehicle, service type, and dealership at a desired time[cite: 23].
-2. [cite_start]**Real-Time Availability Check:** The system checks for the availability of both a ServiceBay and a qualified Technician for the entire service duration before confirming[cite: 27].
-3. [cite_start]**Confirmed Appointment Record:** Upon success, a persistent Appointment record is created, associating the customer, vehicle, technician, and service bay[cite: 28].
+1. **Resource Constrained Booking:** Users can request a service appointment for a specific vehicle, service type, and dealership at a desired time.
+2. **Real-Time Availability Check:** The system verifies the simultaneous availability of a ServiceBay and a qualified Technician for the entire service duration before confirming.
+3. **Confirmed Appointment Record:** Upon success, a persistent `Appointment` record is created, securely linking the customer, vehicle, technician, and service bay.
 
 ---
 
-## 2. System Architecture & Data Flow
+## 2. System Design Document
 
-The system follows a modern decoupled Client-Server architecture, utilizing the MERN stack.
+The system utilizes a decoupled Client-Server architecture built on the MERN stack, with external media management.
 
-### Architecture Diagram
+### 2.1 Architecture Diagram
 
 ```mermaid
 graph TD
-    Client[React SPA] -->|REST API Request| Gateway[Express.js API Gateway]
+    Client[React SPA] -->|Fetch Media| ImageKit[ImageKit.io CDN]
+    Client -->|REST API Request| Gateway[Express.js API Gateway]
+    
     Gateway --> AuthMiddleware[Validation & Middleware]
     AuthMiddleware --> BookingController[Appointments Controller]
     
-    BookingController -->|Fetch existing bookings| DB[(MongoDB)]
-    BookingController -->|Check overlaps| AvailabilityService[Real-Time Availability Service]
+    BookingController -->|Check overlaps| AvailabilityService[Real-Time Availability Aggregation]
     
-    AvailabilityService -->|Match Skills & Bays| DB
+    AvailabilityService -->|Match Skills & Bays| DB[(MongoDB)]
     AvailabilityService -->|Lock Resources & Save| DB
 ```
 
-### Data Flow (The Booking Process)
-1. **Initiation:** The user selects a vehicle, service type, and preferred time via the React UI.
-2. **Availability Request:** The client dispatches a `GET /api/v1/availability` request to the backend to fetch available time slots.
-3. **Cross-Check (Backend):** The Express Service layer queries MongoDB to verify if *both* a Technician and a Service Bay are free for the requested duration.
-4. **Confirmation:** If available, the user finalizes the booking, triggering a `POST /api/v1/appointments` payload.
-5. **Persistence:** The backend validates the payload, uses optimistic concurrency control to prevent double-booking, saves the `Appointment` document, and returns a `201 Created` response.
-6. **State Update:** The React frontend updates the global Zustand state and displays a success confirmation.
-
----
-
-## 3. Technology Stack & Justifications
+### 2.2 Technology Stack
 
 | Layer | Technology | Justification |
 | :--- | :--- | :--- |
-| **Frontend** | React & TypeScript | Provides a component-driven architecture. TypeScript ensures type safety, reducing runtime errors when mapping data payloads. |
-| **State Management** | Zustand & React Query | Zustand handles the multi-step booking wizard state. React Query handles server-state caching for availability slots. |
-| **Styling** | Tailwind CSS | Utility-first styling utilized to implement a custom "Dark Mode" interface with a rustic/vintage mechanic aesthetic, ensuring the tool feels native to a garage environment. |
-| **Backend** | Node.js & Express.js | Highly performant for I/O bound tasks, lightweight, and uses a unified language (JavaScript/TypeScript) across the stack. |
-| **Database** | MongoDB & Mongoose | Flexible document schema accommodates dynamic booking metadata without rigid relational migrations. |
+| **Frontend** | React (Vite) & TypeScript | Component-driven UI for building a dynamic, multi-step booking wizard. TypeScript ensures type safety across API payloads. |
+| **Media Management** | ImageKit.io | Integrated for optimized image delivery. Used for rendering customer vehicle photos, technician avatars, and dealership service bay layouts with automatic format conversion. |
+| **Backend API** | Node.js & Express.js | Lightweight, non-blocking runtime ideal for handling concurrent booking requests and REST API routing. |
+| **Database** | MongoDB & Mongoose | Document-based structure allows for flexible storage of complex appointment associations linking customers, bays, and technicians. |
+
+### 2.3 Documented Assumptions (Addressing Ambiguity)
+* **Standardized Durations:** The duration of an appointment is derived entirely from the `serviceType` (e.g., Oil Change = 1 hour) rather than user input.
+* **Concurrency:** In the event of race conditions (two users booking the exact same slot), the database relies on optimistic concurrency control to reject the second incoming request.
 
 ---
 
-## 4. Technical Implementation Details
+## 3. Data Flow & Core Database Schemas
 
-### UI/UX Design Strategy
-To align with the automotive retail experience, the interface features a specialized **Dark Mode** design. It utilizes deep charcoal backgrounds, metallic grey borders, and monospace typography for technical data (like VINs) to create an authentic industrial feel. 
+### The Booking Lifecycle
+1. **Selection & Media Retrieval:** The user selects their vehicle and service type. ImageKit serves optimized thumbnail images.
+2. **Availability Check (`GET /api/availability`):** The React client queries the Express backend for available time slots based on duration.
+3. **Resource Constraint Validation:** The backend runs a MongoDB aggregation pipeline. A slot is returned as "Available" *only* if both a `Technician` (with the required skill) and a `ServiceBay` are unbooked for the requested time.
+4. **Confirmation (`POST /api/appointments`):** The user confirms the booking. The backend locks the resources and persists the record.
 
-### Core Database Schemas (Mongoose)
+### Core Database Schemas (MongoDB)
 
-To handle the complex constraints, the database leverages references between three main collections:
-
-**`Technicians` Collection**
+**1. `Technician`**
 ```json
 {
   "_id": "ObjectId",
   "name": "String",
-  "skills": ["Oil Change", "Diagnostics", "Transmission"]
+  "avatarUrl": "String", // Hosted on ImageKit
+  "skills": ["Diagnostics", "Oil Change", "Brakes"]
 }
 ```
 
-**`ServiceBays` Collection**
+**2. `ServiceBay`**
 ```json
 {
   "_id": "ObjectId",
   "bayNumber": "String",
-  "equipmentLevel": "Standard" 
+  "imageUrl": "String", // Hosted on ImageKit
+  "isActive": "Boolean"
 }
 ```
 
-**`Appointments` Collection (The Source of Truth)**
+**3. `Appointment` (Source of Truth)**
 ```json
 {
   "_id": "ObjectId",
   "customerId": "ObjectId",
   "vehicleId": "String",
-  "technicianId": "ObjectId", 
-  "serviceBayId": "ObjectId", 
   "serviceType": "String",
+  "technicianId": "ObjectId",
+  "serviceBayId": "ObjectId",
   "startTime": "ISODate",
   "endTime": "ISODate",
   "status": "Confirmed"
 }
 ```
 
-### Observability & Error Handling
-* **Frontend Error Boundaries:** Catch unhandled UI rendering exceptions. API interceptors handle global errors (e.g., 400 Bad Request, 409 Conflict) gracefully.
-* **Backend Logging:** `Morgan` is configured to log HTTP requests, while `Winston` provides structured application logging (Info, Warn, Error).
-* **Validation:** All incoming API requests are strictly validated using `Zod` schemas before hitting the database controllers.
+---
+
+## 4. AI Collaboration Narrative
+
+Generative AI tools (like Google Gemini and GitHub Copilot) were utilized as essential pair-programmers during the development of this full-stack application.
+
+* **Architectural Bridging:** I utilized AI to help map the logic of a standard "Car Rental Booking" flow (booking a single asset) to the more complex Keyloop requirement of a "Service Booking" flow (simultaneously booking two assets). 
+* **Backend Query Optimization:** I directed the AI to generate the initial Mongoose queries for the real-time availability check. When the AI suggested fetching all records into memory to find overlaps, I refined its prompt to mandate a MongoDB Aggregation Pipeline, ensuring the filtering happened efficiently at the database level.
+* **ImageKit Integration:** AI tools generated the boilerplate for integrating the ImageKit React SDK, allowing me to focus on wiring up the business logic for the booking constraints rather than debugging media upload workflows.
+* **Testing:** I independently wrote the critical path tests for the availability algorithm *before* accepting the AI's functional code (Test-Driven Development) to ensure absolute compliance with the assessment requirements.
 
 ---
 
-## 5. AI Collaboration Narrative
+## 5. Setup & Installation Instructions
 
-[cite_start]As GenAI tools are integral to modern workflows [cite: 5][cite_start], this challenge requires using them as an essential collaborator[cite: 6]. [cite_start]My process for guiding and verifying the AI's work [cite: 9] [cite_start]was heavily focused on architectural brainstorming and boilerplate generation[cite: 7].
+### Prerequisites
+* Node.js (v18+)
+* MongoDB URI (Local or Atlas)
+* ImageKit.io Account (for media management)
 
-### Strategy & Direction
-I utilized LLMs (like Google Gemini and GitHub Copilot) as active pair-architects during the design and implementation phases. My high-level strategy was to explicitly define the business constraints (the simultaneous need for a Technician and a Service Bay) and ask the AI to propose the most optimal database querying strategy in MongoDB.
+### 1. Clone & Install
+```bash
+git clone <repository_url>
+cd keyloop-service-scheduler
 
-### Verification & Refinement
-* **Data Modeling:** I directed the AI to prototype the initial Mongoose schemas. However, I manually refined the output to ensure `technicianId` and `serviceBayId` were correctly indexed to optimize the heavy read operations required by the real-time availability check.
-* **Algorithm Correction:** When generating the availability check logic, the AI initially proposed fetching all appointments and filtering them in memory. I rejected this approach for scalability reasons and iteratively guided the AI to construct a more efficient MongoDB Aggregation Pipeline that filters overlaps directly at the database level.
-* **Quality Assurance:** To ensure final code quality, I independently wrote the unit tests for the core business logic *before* having the AI generate the functional code (Test-Driven Development), ensuring the AI's output strictly adhered to the acceptance criteria.
+# Install Server Dependencies
+cd server
+npm install
 
----
+# Install Client Dependencies
+cd ../client
+npm install
+```
 
-## 6. Setup & Installation Instructions
+### 2. Environment Configuration
+Create a `.env` file in the **`/server`** directory:
+```env
+PORT=5000
+MONGO_URI=your_mongodb_connection_string
+```
 
-*(Assuming Node.js and MongoDB are installed locally)*
+Create a `.env` file in the **`/client`** directory:
+```env
+VITE_API_BASE_URL=http://localhost:5000/api
+VITE_IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/your_endpoint
+VITE_IMAGEKIT_PUBLIC_KEY=your_public_key
+```
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repository_url>
-   cd keyloop-unified-scheduler
-   ```
+### 3. Run the Application
+Open two terminal windows:
 
-2. **Install Dependencies:**
-   ```bash
-   # Install backend dependencies
-   cd server
-   npm install
+**Terminal 1 (Backend):**
+```bash
+cd server
+npm run dev
+```
 
-   # Install frontend dependencies
-   cd ../client
-   npm install
-   ```
+**Terminal 2 (Frontend):**
+```bash
+cd client
+npm run dev
+```
 
-3. **Environment Configuration:**
-   Create a `.env` file in the `server` directory:
-   ```env
-   PORT=5000
-   MONGO_URI=mongodb://localhost:27017/keyloop_scheduler
-   ```
+### 4. Run the Test Suite
+The core business logic (specifically the Real-Time Availability Check and Resource Allocation) is heavily unit tested to ensure booking integrity.
 
-4. **Run the Application:**
-   ```bash
-   # Terminal 1: Start Backend (from /server)
-   npm run dev
+```bash
+# Run backend tests (Jest/Supertest)
+cd server
+npm run test
+```
 
-   # Terminal 2: Start Frontend (from /client)
-   npm run start
-   ```
-
-5. **Run Tests:**
-   ```bash
-   # From the /server directory
-   npm run test
-   ```
